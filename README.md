@@ -3,6 +3,14 @@
 Run Claude Code's agent view (`claude agents`) in [Rex](https://www.superlogical.com/rex)
 and open each background session in its own Rex pane. Every session pane reports its status to Rex's Activity panel, so you can see at a glance which session needs you.
 
+Each session opens in a pane named after it, next to the agent view:
+
+![The agent view on the left, with two background sessions open in Rex panes on the right](docs/demo1.png)
+
+And Rex's Activity panel shows which ones need you:
+
+![Rex's Activity panel listing one session blocked on a question and two done, with a session pane floating over the agent view](docs/demo2.png)
+
 ## Requirements
 
 - [Rex](https://www.superlogical.com/rex)
