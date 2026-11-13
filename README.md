@@ -94,8 +94,9 @@ would attach a session:
    compared with each session's job state; a row with no summary is the one
    that's working.
 5. It swallows the key and runs
-   `rex split -- rexagents attach <session id>`. Panes are labelled
-   `claude:<id>`, which is how an open session's pane is found again.
+   `rex split -- rexagents attach <session id>`. The pane is named after the
+   session, and rexagents remembers which pane shows which session, so opening
+   it again focuses its pane.
 
 **Going back.** The session pane runs `claude attach` behind the same kind of
 proxy. On ←, Ctrl+C or Ctrl+D it reads the pane's screen, and if Claude is

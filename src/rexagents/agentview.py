@@ -25,8 +25,8 @@ from typing import Callable, NamedTuple
 from . import debug
 from .hook import claude_dir, installed, launcher, settings, user_settings
 from .proxy import Stop, run_proxy
+from .store import SessionStore, session_panes, state_root
 
-LABEL_PREFIX = "claude:"
 # Enter (legacy and kitty keyboard protocol) and → (normal and application cursor mode).
 _OPEN_KEYS = frozenset({b"\r", b"\x1b[13u", b"\x1b[C", b"\x1bOC"})
 _BACK_KEYS = frozenset({b"\x1b[D", b"\x1bOD"})
@@ -274,14 +274,14 @@ def match_session(name: str, sessions: list[dict], summary: str = "", glyph: str
     return matches[0] if len(matches) == 1 else None
 
 
-def plan_placement(blocks: list[dict], agent_view: str) -> tuple[str, str, int]:
+def plan_placement(blocks: list[dict], agent_view: str, panes: set[str]) -> tuple[str, str, int]:
     """The first session opens right of the agent view; later ones stack below the last.
 
     Floating panes are never split, which would open the session inside their floating layer.
     """
     window = next((b.get("window_id") for b in blocks if b["block_id"] == agent_view), None)
     tiled = [b for b in blocks if b.get("window_id") == window and not b.get("floating")]
-    opened = [b for b in tiled if (b.get("label") or "").startswith(LABEL_PREFIX)]
+    opened = [b for b in tiled if b["block_id"] in panes]
     if opened:
         return opened[-1]["block_id"], "below", 50
     if tiled and not any(b["block_id"] == agent_view for b in tiled):
@@ -299,19 +299,23 @@ def _blocks(rex: Rex, rex_session: str) -> list[dict]:
 
 def open_session(session: dict, rex_session: str, agent_view: str, rex: Rex, attach_cmd: list[str]) -> None:
     sid = session["sessionId"]
-    label = LABEL_PREFIX + (session.get("id") or sid[:8])
+    store = SessionStore(state_root(), sid)
     blocks = _blocks(rex, rex_session)
-    existing = next((b for b in blocks if b.get("label") == label), None)
-    if existing:
-        rex("focus", "-s", rex_session, existing["block_id"])
+    ids = {b["block_id"] for b in blocks}
+    if (pane := store.pane()) in ids:
+        rex("focus", "-s", rex_session, pane)
         return
-    anchor, direction, ratio = plan_placement(blocks, agent_view)
+    anchor, direction, ratio = plan_placement(blocks, agent_view, ids & set(session_panes(state_root())))
     cwd = session.get("cwd") if os.path.isdir(session.get("cwd") or "") else os.path.expanduser("~")
     # A stopped session wakes in its cwd: `rexagents attach` checks it can first.
     stopped = [] if "pid" in session else [f"--cwd={session.get('cwd') or ''}"]
-    rex("split", "-s", rex_session, "-b", anchor, "--split", direction, "--ratio", str(ratio),
-        "--label", label, "-c", cwd, "--shell", "none", "--", *attach_cmd, sid,
-        f"--title={session.get('name') or sid}", f"--agent-view={agent_view}", *stopped)
+    label = session.get("name") or session.get("id") or sid[:8]
+    created = rex("split", "-s", rex_session, "-b", anchor, "--split", direction, "--ratio", str(ratio),
+                  "--label", label, "--json", "-c", cwd, "--shell", "none", "--", *attach_cmd, sid,
+                  f"--title={session.get('name') or sid}", f"--agent-view={agent_view}", *stopped)
+    # Recorded now as well as by the pane, so opening the session again before it starts focuses it.
+    if new := (json.loads(created or "{}").get("block_ids") or [None])[0]:
+        store.set_pane(new)
 
 
 def _footer(vt: bytes) -> str:

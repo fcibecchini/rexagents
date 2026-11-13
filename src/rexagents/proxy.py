@@ -9,11 +9,13 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import pty
 import re
 import select
 import signal
+import subprocess
 import termios
 import time
 import tty
@@ -203,14 +205,42 @@ def ask(prompt: str, stdin_fd: int = 0, stdout_fd: int = 1) -> bytes:
             termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved)
 
 
+def _relabel(rex_session: str, block: str, label: str) -> None:
+    try:
+        subprocess.run(["rex", "api", "call", "-s", rex_session, "session.set_block_label",
+                        json.dumps({"block_id": block, "label": label})],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def run_attach(session_id: str, title: str, argv: list[str], on_input: InputHook | None = None,
                poll_every: float = 2.0) -> int:
-    """Run `argv` (normally `claude attach`) reporting the session's status."""
+    """Run `argv` (normally `claude attach`) reporting the session's status.
+
+    In Rex, the pane is recorded as the session's, and labelled with its name as Claude renames it.
+    """
     store = SessionStore(state_root(), session_id)
     job = str(claude_dir() / "jobs" / session_id[:8])
-    with store.listen() as listener:
-        code = run_proxy(argv, on_input=on_input, listener=listener, initial=store.load(), title=title,
-                         poll_title=lambda: session_name(job, session_id), poll_every=poll_every)
+    block, rex_session = os.environ.get("REX_BLOCK"), os.environ.get("REX_SESSION")
+    named = {"name": title}
+
+    def poll_title() -> str | None:
+        name = session_name(job, session_id)
+        if name and name != named["name"] and block and rex_session:
+            _relabel(rex_session, block, name)
+        named["name"] = name or named["name"]
+        return name
+
+    if block:
+        store.set_pane(block)
+    try:
+        with store.listen() as listener:
+            code = run_proxy(argv, on_input=on_input, listener=listener, initial=store.load(), title=title,
+                             poll_title=poll_title, poll_every=poll_every)
+    finally:
+        if block:
+            store.forget_pane(block)
     if code != 0:
         # Rex keeps a pane open only for a command that fails right away, and by the time
         # `claude attach` gives up that window has passed: keep its message on screen.

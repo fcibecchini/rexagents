@@ -4,6 +4,7 @@ Layout under the state root:
 
     <session_id>/status.json   last status, replayed when a proxy attaches
     <session_id>/<pid>.fifo    one per attached proxy; hooks write JSON lines
+    <session_id>/pane          the Rex block showing the session, if any
 """
 
 from __future__ import annotations
@@ -80,18 +81,46 @@ class Listener:
         self.close()
 
 
+def session_panes(root: Path) -> dict[str, str]:
+    """The Rex blocks showing sessions, each with its session id."""
+    panes = {}
+    for path in Path(root).glob("*/pane"):
+        try:
+            block = path.read_text().strip()
+        except OSError:
+            continue
+        if block:
+            panes[block] = path.parent.name
+    return panes
+
+
 class SessionStore:
     def __init__(self, root: Path, session_id: str):
         if not session_id or len(session_id) > 64 or not set(session_id) <= _SAFE_ID_CHARS:
             raise ValueError(f"unsafe session id: {session_id!r}")
         self.dir = Path(root) / session_id
         self._status = self.dir / "status.json"
+        self._pane = self.dir / "pane"
 
     def load(self) -> dict | None:
         try:
             return json.loads(self._status.read_text())
         except (FileNotFoundError, json.JSONDecodeError):
             return None
+
+    def pane(self) -> str | None:
+        try:
+            return self._pane.read_text().strip() or None
+        except OSError:
+            return None
+
+    def set_pane(self, block_id: str) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self._pane.write_text(block_id)
+
+    def forget_pane(self, block_id: str) -> None:
+        if self.pane() == block_id:
+            self._pane.unlink(missing_ok=True)
 
     def publish(self, status: dict) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
