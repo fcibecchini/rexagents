@@ -87,23 +87,26 @@ _TOOL_EVENTS = frozenset({"PreToolUse", "PermissionRequest", "PostToolUse", "Pos
 
 def tool_key(payload: dict) -> str | None:
     """Identify the tool call a tool event is about. PermissionRequest carries
-    no tool_use_id, so the call is identified by its name and input."""
+    no tool_use_id, so the call is identified by its name and input. A question
+    is identified by its name alone: once answered, its input carries the answers."""
     if payload.get("hook_event_name") not in _TOOL_EVENTS:
         return None
-    return json.dumps([payload.get("tool_name"), payload.get("tool_input")], sort_keys=True)
+    tool = payload.get("tool_name")
+    tool_input = None if tool == "AskUserQuestion" else payload.get("tool_input")
+    return json.dumps([tool, tool_input], sort_keys=True)
 
 
 def next_status(current: dict | None, payload: dict) -> dict | None:
     """The status to publish for this hook, given the current one, or None.
 
     While blocked on a tool call, events about other tool calls (parallel
-    tools) leave the block in place, and so does the notification announcing
-    the block, which only says that Claude needs permission."""
+    tools) leave the block in place. The notification announcing a block only
+    says that Claude needs permission, so the block keeps its own kind and message."""
     status = status_from_hook(payload)
     if status is None:
         return None
     if payload.get("hook_event_name") == "Notification" and (current or {}).get("state") == "blocked":
-        return None
+        return {key: current[key] for key in ("state", "kind", "msg") if key in current}
     key = tool_key(payload)
     if status["state"] == "blocked" and key:
         status["blocker"] = key
