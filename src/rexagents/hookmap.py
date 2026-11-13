@@ -51,10 +51,10 @@ def status_from_hook(payload: dict) -> dict | None:
         return _status("idle")
     if event == "UserPromptSubmit":
         return _status("working", _first_line(payload.get("prompt")))
+    if event in ("PreToolUse", "PermissionRequest") and tool == "AskUserQuestion":
+        questions = (tool_input or {}).get("questions") or [{}]
+        return _status("blocked", _first_line(questions[0].get("question")), "question")
     if event == "PreToolUse":
-        if tool == "AskUserQuestion":
-            questions = (tool_input or {}).get("questions") or [{}]
-            return _status("blocked", _first_line(questions[0].get("question")), "question")
         return _status("working", _describe_tool(tool, tool_input))
     if event == "PermissionRequest":
         return _status("blocked", f"Allow: {_describe_tool(tool, tool_input)}", "permission")
@@ -97,9 +97,12 @@ def next_status(current: dict | None, payload: dict) -> dict | None:
     """The status to publish for this hook, given the current one, or None.
 
     While blocked on a tool call, events about other tool calls (parallel
-    tools) leave the block in place."""
+    tools) leave the block in place, and so does the notification announcing
+    the block, which only says that Claude needs permission."""
     status = status_from_hook(payload)
     if status is None:
+        return None
+    if payload.get("hook_event_name") == "Notification" and (current or {}).get("state") == "blocked":
         return None
     key = tool_key(payload)
     if status["state"] == "blocked" and key:
