@@ -92,8 +92,8 @@ would attach a session:
 2. It checks the footer says Enter opens a session (`enter to open`,
    `enter to return` or `enter to resume`). Otherwise the key means something
    else, such as sending a reply, and goes through.
-3. It finds the row: the selected one (highlighted by the arrow keys, or drawn
-   brighter under the mouse), the Nth one, or the one clicked.
+3. It finds the row: the selected one (picked with the arrow keys or the
+   mouse), the Nth one, or the one clicked.
 4. It matches the row to exactly one session in
    `claude agents --json --all`, by name. A name cut short with `…` matches by
    prefix. A new session shows its prompt until Claude names it, so if no name

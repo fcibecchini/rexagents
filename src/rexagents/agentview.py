@@ -153,14 +153,19 @@ def _row(text: str, group: str = "") -> Row | None:
     return Row(m.group(1).strip(), "" if _NOT_SUMMARY.fullmatch(summary) else summary, text.lstrip()[0], group)
 
 
-def _listing(screen: list[tuple[str, list[Pen]]]) -> list[tuple[int, Row, Pen]]:
-    """The session rows above the input box: (line index, row, the pen of the name's first char).
+def _listing(screen: list[tuple[str, list[Pen]]]) -> list[tuple[int, Row, Pen, bool]]:
+    """The session rows above the input box: (line index, row, the pen of the name's first char,
+    whether the ❯ pointer marks it).
 
     A row starts with a status glyph; the header above the list, which scrolls off a long
     one, and group names start with a letter or digit, and "… 46 more" with an ellipsis.
+    The selected line, row or not, starts with "❯".
     """
     rows, group = [], ""
     for y, (text, pens) in enumerate(screen):
+        pointed = text.startswith("❯")
+        if pointed:
+            text = " " + text[1:]
         glyph = text.lstrip()[:1]
         if glyph in ("─", "╭"):
             break
@@ -168,7 +173,7 @@ def _listing(screen: list[tuple[str, list[Pen]]]) -> list[tuple[int, Row, Pen]]:
             group = text.strip()
         elif glyph and glyph != "…" and (row := _row(text, group)):
             name = len(text) - len(text.lstrip()) + 2  # after the status glyph and a space
-            rows.append((y, row, pens[name]))
+            rows.append((y, row, pens[name], pointed))
     return rows
 
 
@@ -190,15 +195,18 @@ def _list_in_front(footer: str) -> bool:
 def row_to_open(vt: bytes) -> Row | None:
     """The selected row, if the footer says Enter opens it.
 
-    Keys select a row with a background; the mouse over a row selects it by drawing its
-    name in the plain foreground colour instead of grey. A bold name isn't a selection.
+    The ❯ pointer marks it. Older versions of Claude Code selected a row with a background
+    (keys), or drew its name in the plain foreground colour instead of grey (mouse). A bold
+    name isn't a selection.
     """
     if not _opening(_footer(vt)):
         return None
     rows = _listing(_screen(vt))
-    selected = [row for _, row, pen in rows if pen.bg]
+    selected = [row for _, row, _, pointed in rows if pointed]
     if not selected:
-        selected = [row for _, row, pen in rows if pen.bright and not (pen.bold or pen.dim)]
+        selected = [row for _, row, pen, _ in rows if pen.bg]
+    if not selected:
+        selected = [row for _, row, pen, _ in rows if pen.bright and not (pen.bold or pen.dim)]
     return selected[0] if len(selected) == 1 else None
 
 
@@ -206,7 +214,7 @@ def clicked_row(vt: bytes, y: int) -> Row | None:
     """The session row on screen line y (from 1), if the footer says the list is in front."""
     if not _list_in_front(_footer(vt)):
         return None
-    return next((row for line, row, _ in _listing(_screen(vt)) if line == y - 1), None)
+    return next((row for line, row, _, _ in _listing(_screen(vt)) if line == y - 1), None)
 
 
 def alt_digit(data: bytes) -> int | None:
