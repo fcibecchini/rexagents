@@ -14,7 +14,7 @@ from . import __version__
 
 HELP = """\
 rexagents: the stock `claude agents` view, opening each session in its own
-Rex pane, with the session's status in Rex's Activity panel.
+Rex pane, with the session's status in Rex's Activity sidebar.
 
 Usage:
   rexagents [claude agents options]   run the agent view
