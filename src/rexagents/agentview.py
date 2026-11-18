@@ -47,6 +47,10 @@ _CLICK = re.compile(rb"\x1b\[<0;\d+;(\d+)([Mm])")  # SGR mouse: left button, no 
 _TOKEN = re.compile(rb"\x1b\[([0-9;:]*)([A-Za-z])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.?|([^\x1b]+)")
 _ROW = re.compile(r"\s*\S (.+?)(?:\s{2,}|\s*$)")
 _NOT_SUMMARY = re.compile(r"\d+[smhd]|#\d+|PR #\d+|\d+ PRs?")  # the age, or a pull request badge
+# A job waiting for its first prompt, such as a new fork, needs this; its row, when selected,
+# may show the hint instead.
+_FIRST_PROMPT_NEEDS = "send a prompt to start"
+_FIRST_PROMPT_HINT = "space to send it a prompt"
 
 Rex = Callable[..., bytes]
 
@@ -244,6 +248,8 @@ def _shown(session: dict) -> list[str]:
         return []
     output = state.get("output")
     texts = [state.get("detail"), state.get("needs"), output.get("result") if isinstance(output, dict) else None]
+    if state.get("needs") == _FIRST_PROMPT_NEEDS:
+        texts.append(_FIRST_PROMPT_HINT)  # what the selected row may show instead
     return [" ".join(t.split()) for t in texts if isinstance(t, str)]
 
 
@@ -254,11 +260,13 @@ def _shows(session: dict, summary: str) -> bool:
 
 
 def _in_group(session: dict, group: str) -> bool:
+    """Whether the session may be listed under this group. The agent view groups by the job's
+    state when there is one: an idle process whose job is blocked on a question needs input."""
     status = session.get("status") if "pid" in session else None
     if group == "Working":
-        return status == "busy"
+        return status == "busy" or session.get("state") == "working"
     if group == "Needs input":
-        return status == "waiting"
+        return status == "waiting" or session.get("state") == "blocked"
     if group == "Completed":
         return status not in ("busy", "waiting")
     return True
@@ -273,12 +281,13 @@ def match_session(name: str, sessions: list[dict], summary: str = "", glyph: str
     if not matches:
         # A new session's row shows its prompt until Claude names it; until then its name is its id.
         matches = [s for s in sessions if "pid" in s and s.get("name") in (None, "", s["id"])]
-    if len(matches) > 1 and glyph:
-        matches = [s for s in matches if ("pid" not in s) == (glyph == "∙")]
-    if len(matches) > 1:
-        matches = [s for s in matches if _in_group(s, group)]
-    if len(matches) > 1:
-        matches = [s for s in matches if _shows(s, summary)]
+    # Tie-breakers for sessions with the same name. One that would rule out every session reads
+    # the screen or the session wrong, so it's skipped rather than trusted.
+    for fits in (lambda s: not glyph or ("pid" not in s) == (glyph == "∙"),
+                 lambda s: _in_group(s, group),
+                 lambda s: _shows(s, summary)):
+        if len(matches) > 1:
+            matches = [s for s in matches if fits(s)] or matches
     return matches[0] if len(matches) == 1 else None
 
 
