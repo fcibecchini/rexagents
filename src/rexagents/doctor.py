@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from .hook import is_ours, user_settings
+from .rexpane import location
 from .store import state_root
 
 MIN_CLAUDE = (2, 1, 295)
@@ -20,7 +21,7 @@ Result = tuple  # (status, message): status is "ok", "fail" or "info"
 def check_rex(env: dict, rex_version: str | None) -> Result:
     if not rex_version:
         return "fail", "rex isn't on PATH. Install Rex: https://www.superlogical.com/rex"
-    if env.get("REX_SESSION") and env.get("REX_BLOCK"):
+    if location(env):
         return "ok", f"in a Rex pane ({rex_version})"
     return "info", f"{rex_version} found, but this isn't a Rex pane: run rexagents inside Rex"
 

@@ -23,6 +23,7 @@ from typing import Callable, Optional
 
 from .hook import claude_dir, session_name
 from .osc import encode_clear, encode_status
+from .rexpane import location
 from .store import Listener, SessionStore, state_root
 from .vtscan import EscapeScanner
 
@@ -222,7 +223,7 @@ def run_attach(session_id: str, title: str, argv: list[str], on_input: InputHook
     """
     store = SessionStore(state_root(), session_id)
     job = str(claude_dir() / "jobs" / session_id[:8])
-    block, rex_session = os.environ.get("REX_BLOCK"), os.environ.get("REX_SESSION")
+    rex_session, block = location() or (None, None)
     named = {"name": title}
 
     def poll_title() -> str | None:

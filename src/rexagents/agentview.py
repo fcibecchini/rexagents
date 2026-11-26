@@ -25,6 +25,7 @@ from typing import Callable, NamedTuple
 from . import debug
 from .hook import claude_dir, installed, launcher, settings, user_settings
 from .proxy import Stop, run_proxy
+from .rexpane import location
 from .store import SessionStore, session_panes, state_root
 
 # Enter (legacy and kitty keyboard protocol) and → (normal and application cursor mode).
@@ -546,11 +547,12 @@ def show_as_claude(args: list[str]) -> None:
 def run(agents_args: list[str]) -> int:
     hook_launcher = None if installed(user_settings()) else launcher()
     argv = agents_argv(agents_args, settings(hook_launcher) if hook_launcher else None)
-    rex_session, block = os.environ.get("REX_SESSION"), os.environ.get("REX_BLOCK")
-    if not (rex_session and block):
+    where = location()
+    if not where:
         print("rexagents: not in a Rex pane, so sessions open in the agent view as usual.", file=sys.stderr)
         os.execvp(argv[0], argv)
     show_as_claude(agents_args)
+    rex_session, block = where
 
     src = str(Path(__file__).resolve().parent.parent)
     attach_cmd = ["/usr/bin/env", f"PYTHONPATH={src}", sys.executable, "-m", "rexagents", "attach"]

@@ -6,7 +6,6 @@ rexagents command and leading flags all go to `claude agents`.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -133,7 +132,9 @@ def _attach(args: list[str]) -> int:
     agentview.show_as_claude(["attach", *args])
 
     session_id = opts.session_id
-    rex_session, block = os.environ.get("REX_SESSION"), os.environ.get("REX_BLOCK")
+    from .rexpane import location
+
+    rex_session, block = location() or (None, None)
     if opts.cwd is not None:
         from . import recover
         from .agentview import _rex, _sessions
