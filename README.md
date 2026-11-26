@@ -82,6 +82,58 @@ pane to go back to the list.
 | `rexagents help [command]` | Show help |
 | `rexagents version` | Print the version |
 
+## Resuming after a Rex restart
+
+rexagents supports the
+[Program Resume Protocol](https://www.superlogical.com/rex/docs/build/program-resume):
+each pane reports the command that starts it again, so when the Rex server
+restarts, the agent view and its session panes come back. Rex resumes only
+commands that a trust rule allows, so add these rules to Rex's `init.lua`
+(`~/.config/rex/init.lua`):
+
+```lua
+local rexagents = (os.getenv("XDG_STATE_HOME") or os.getenv("HOME") .. "/.local/state")
+  .. "/rexagents/claude"
+rex.set("resume.trust.rexagents", {
+  command = { rexagents },
+  flags = {
+    ["--add-dir"] = { "keep", values = "many" },
+    ["--agent"] = { "keep", values = 1 },
+    ["--allow-dangerously-skip-permissions"] = "keep",
+    ["--cwd"] = { "keep", values = 1 },
+    ["--dangerously-skip-permissions"] = "keep",
+    ["--effort"] = { "keep", values = 1 },
+    ["--mcp-config"] = { "keep", values = "many" },
+    ["--model"] = { "keep", values = 1 },
+    ["--permission-mode"] = { "keep", values = 1 },
+    ["--plugin-dir"] = { "keep", values = "many" },
+    ["--restricted"] = "keep",
+    ["--setting-sources"] = { "keep", values = 1 },
+    ["--settings"] = { "keep", values = 1 },
+    ["--strict-mcp-config"] = "keep",
+  },
+})
+rex.set("resume.trust.rexagents_attach", {
+  command = { rexagents, "attach", rex.match.uuid },
+  flags = {
+    ["--title"] = { "keep", values = 1 },
+    ["--agent-view"] = { "keep", values = 1 },
+    ["--cwd"] = { "keep", values = 1 },
+  },
+})
+```
+
+The command is the path of a launcher that rexagents keeps up to date and
+each pane runs as: Rex shows Claude's icon for a program named `claude`, and
+runs the launcher again after a restart. Rex matches a path exactly, hence
+the rules name it in full.
+
+Then run `rex config reload`, which applies the rules to running panes too,
+and check with `rexagents doctor`. Panes started by an earlier version of
+rexagents don't report, so start them again once. See
+[Resume Rules](https://www.superlogical.com/rex/docs/customize/resume-rules)
+to limit the rules to some directories.
+
 ## How it works
 
 **Opening a session.** `rexagents` runs `claude agents` behind a
@@ -126,6 +178,7 @@ session Claude names after its last status still gets its name in the panel.
 ## Troubleshooting
 
 `rexagents doctor` checks that Rex and a recent enough Claude Code are there,
+whether Rex has the rules to resume rexagents,
 that the hooks are installed and point at an existing `rexagents`, and lists
 running sessions that have never reported a status. It exits 1 when something
 needs fixing, and says how.

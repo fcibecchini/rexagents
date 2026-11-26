@@ -127,14 +127,32 @@ def _attach(args: list[str]) -> int:
     opts = parser.parse_args(args)
 
     from . import agentview
-    from .proxy import ask, run_attach
-
-    agentview.show_as_claude(["attach", *args])
-
-    session_id = opts.session_id
+    from .resume import take_token
     from .rexpane import location
 
+    agentview.show_as_claude(["attach", *args])
+    token = take_token()
+
     rex_session, block = location() or (None, None)
+    code = _attach_session(opts, args, token, rex_session, block)
+    if opts.agent_view and rex_session and block:
+        import subprocess
+
+        from .agentview import _rex
+
+        # Rex resumes a program through a shell, which would be left behind in the pane.
+        try:
+            _rex("block", "close", "-s", rex_session, block)
+        except (subprocess.CalledProcessError, OSError):
+            pass
+    return code
+
+
+def _attach_session(opts, args: list[str], token: str | None, rex_session: str | None, block: str | None) -> int:
+    from .proxy import ask, run_attach
+    from .resume import Resume, launcher_path
+
+    session_id = opts.session_id
     if opts.cwd is not None:
         from . import recover
         from .agentview import _rex, _sessions
@@ -150,7 +168,10 @@ def _attach(args: list[str]) -> int:
         from .agentview import _rex, attach_input
 
         on_input = attach_input(rex_session, block, opts.agent_view, _rex)
-    return run_attach(session_id, opts.title, ["claude", "attach", session_id[:8]], on_input)
+    # Rex trusts a resume command only with the flags the program was started with.
+    resume = Resume(token, [str(launcher_path()), "attach",
+                            *[session_id if a == opts.session_id else a for a in args]]) if token else None
+    return run_attach(session_id, opts.title, ["claude", "attach", session_id[:8]], on_input, resume=resume)
 
 
 _COMMANDS = {"help": _help, "version": _version, "hooks": _hooks, "doctor": _doctor, "attach": _attach}

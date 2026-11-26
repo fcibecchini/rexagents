@@ -23,6 +23,7 @@ from typing import Callable, Optional
 
 from .hook import claude_dir, session_name
 from .osc import encode_clear, encode_status
+from .resume import Resume
 from .rexpane import location
 from .store import Listener, SessionStore, state_root
 from .vtscan import EscapeScanner
@@ -80,7 +81,10 @@ def _encode(status: dict, title: str | None) -> bytes | None:
 def run_proxy(argv: list[str], *, on_input: InputHook | None = None, listener: Listener | None = None,
               initial: dict | None = None, title: str | None = None,
               poll_title: Callable[[], str | None] | None = None, poll_every: float = 2.0,
-              stdin_fd: int = 0, stdout_fd: int = 1) -> int:
+              resume: Resume | None = None, stdin_fd: int = 0, stdout_fd: int = 1) -> int:
+    """Run `argv` behind a pseudo-terminal, reporting the session's status, and with `resume`,
+    how to start this program again. When the program ends, so does the record of how to resume
+    it; a terminal that goes away hangs up this process first, and keeps the record."""
     pid, master = pty.fork()
     if pid == 0:
         try:
@@ -141,6 +145,9 @@ def run_proxy(argv: list[str], *, on_input: InputHook | None = None, listener: L
                 return
             relay_output()
 
+    resume_report = resume.report() if resume else None
+    if resume_report:
+        _write_all(stdout_fd, resume_report)
     if initial and initial.get("state") != "clear":
         queue(initial)
         flush_if_safe()
@@ -179,6 +186,8 @@ def run_proxy(argv: list[str], *, on_input: InputHook | None = None, listener: L
     finally:
         if state["reported"]:
             _write_all(stdout_fd, encode_clear())
+        if resume_report:
+            _write_all(stdout_fd, resume.clear())
         if saved_attrs is not None:
             termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved_attrs)
             signal.signal(signal.SIGWINCH, signal.SIG_DFL)
@@ -216,7 +225,7 @@ def _relabel(rex_session: str, block: str, label: str) -> None:
 
 
 def run_attach(session_id: str, title: str, argv: list[str], on_input: InputHook | None = None,
-               poll_every: float = 2.0) -> int:
+               poll_every: float = 2.0, resume: Resume | None = None) -> int:
     """Run `argv` (normally `claude attach`) reporting the session's status.
 
     In Rex, the pane is recorded as the session's, and labelled with its name as Claude renames it.
@@ -238,7 +247,7 @@ def run_attach(session_id: str, title: str, argv: list[str], on_input: InputHook
     try:
         with store.listen() as listener:
             code = run_proxy(argv, on_input=on_input, listener=listener, initial=store.load(), title=title,
-                             poll_title=poll_title, poll_every=poll_every)
+                             poll_title=poll_title, poll_every=poll_every, resume=resume)
     finally:
         if block:
             store.forget_pane(block)

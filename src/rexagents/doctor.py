@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from .hook import is_ours, user_settings
+from .resume import launcher_path
 from .rexpane import location
 from .store import state_root
 
@@ -24,6 +25,23 @@ def check_rex(env: dict, rex_version: str | None) -> Result:
     if location(env):
         return "ok", f"in a Rex pane ({rex_version})"
     return "info", f"{rex_version} found, but this isn't a Rex pane: run rexagents inside Rex"
+
+
+def resume_rules(launcher: Path) -> list[str]:
+    """The names of Rex's resume rules (in init.lua) that trust a command starting with `launcher`."""
+    try:
+        done = subprocess.run(["rex", "config", "check", "--json"], capture_output=True, text=True, timeout=5)
+        rules = json.loads(done.stdout).get("resume_rules") or []
+        return [r["name"] for r in rules if (r.get("rule", {}).get("command") or [None])[0] == str(launcher)]
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError, KeyError, TypeError):
+        return []
+
+
+def check_resume(rules: list[str], launcher: Path) -> Result:
+    if rules:
+        return "ok", f"Rex resumes rexagents after a restart (rules {', '.join(rules)})"
+    return "info", f"Rex won't resume rexagents after a restart: add the trust rules from the README, " \
+                   f"whose command starts with {launcher}"
 
 
 def check_claude(version: str | None) -> Result:
@@ -97,6 +115,7 @@ def run() -> int:
         sessions = []
     text, code = report([
         check_rex(dict(os.environ), rex_version[0] if rex_version else None),
+        check_resume(resume_rules(launcher_path()) if rex_version else [], launcher_path()),
         check_claude(_output("claude", "--version")),
         check_hooks(user_settings()),
         check_sessions(sessions, state_root()),

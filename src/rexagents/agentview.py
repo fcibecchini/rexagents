@@ -25,6 +25,7 @@ from typing import Callable, NamedTuple
 from . import debug
 from .hook import claude_dir, installed, launcher, settings, user_settings
 from .proxy import Stop, run_proxy
+from .resume import Resume, launcher_path, take_token, write_launcher
 from .rexpane import location
 from .store import SessionStore, session_panes, state_root
 
@@ -526,22 +527,17 @@ def _sessions(agents_args: list[str]) -> list[dict]:
         return []
 
 
-_AS_CLAUDE = "REXAGENTS_AS_CLAUDE"  # set while running again as claude: the PYTHONPATH to restore
+_AS_CLAUDE = "REXAGENTS_AS_CLAUDE"  # set while running again as the launcher
 
 
 def show_as_claude(args: list[str]) -> None:
-    """Rex picks a pane's icon from its program's argv[0], so run again as `claude`."""
-    if _AS_CLAUDE in os.environ:
-        original = os.environ.pop(_AS_CLAUDE)
-        if original:
-            os.environ["PYTHONPATH"] = original
-        else:
-            os.environ.pop("PYTHONPATH", None)
+    """Rex picks a pane's icon from its program's argv[0], so run again as the launcher named
+    `claude`, which is also the program a resume command names. Python runs the launcher as its
+    script, so the command line Rex checks the resume command against has no flags of Python's."""
+    if os.environ.pop(_AS_CLAUDE, None) is not None:
         return
-    original = os.environ.get("PYTHONPATH", "")
-    src = str(Path(__file__).resolve().parent.parent)
-    env = {**os.environ, _AS_CLAUDE: original, "PYTHONPATH": os.pathsep.join(filter(None, [src, original]))}
-    os.execve(sys.executable, ["claude", "-m", "rexagents", *args], env)
+    launcher = str(write_launcher(sys.executable, str(Path(__file__).resolve().parent.parent)))
+    os.execve(sys.executable, [launcher, launcher, *args], {**os.environ, _AS_CLAUDE: "1"})
 
 
 def run(agents_args: list[str]) -> int:
@@ -553,8 +549,9 @@ def run(agents_args: list[str]) -> int:
         os.execvp(argv[0], argv)
     show_as_claude(agents_args)
     rex_session, block = where
+    token = take_token()
+    resume = Resume(token, [str(launcher_path()), *agents_args], cwd=os.getcwd()) if token else None
 
-    src = str(Path(__file__).resolve().parent.parent)
-    attach_cmd = ["/usr/bin/env", f"PYTHONPATH={src}", sys.executable, "-m", "rexagents", "attach"]
+    attach_cmd = [str(launcher_path()), "attach"]
     on_input = open_input(rex_session, block, _rex, lambda: _sessions(agents_args), attach_cmd)
-    return run_proxy(argv, on_input=on_input)
+    return run_proxy(argv, on_input=on_input, resume=resume)
